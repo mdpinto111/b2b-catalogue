@@ -1,0 +1,119 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Customer accounts (catalogue side)
+model Client {
+  id              Int      @id @default(autoincrement())
+  raisonSociale   String
+  email           String   @unique
+  passwordHash    String
+  defaultDiscount Int      @default(0) // remise globale en %, 0-100
+  actif           Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  pricing ClientProductPricing[]
+  orders  Order[]
+}
+
+// Back-office accounts
+model AdminUser {
+  id           Int    @id @default(autoincrement())
+  email        String @unique
+  passwordHash String
+  role         String @default("admin")
+}
+
+model Category {
+  id        Int       @id @default(autoincrement())
+  nom       String
+  slug      String    @unique
+  imageUrl  String?
+  position  Int       @default(0)
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+// Images uploaded from the back office, stored in the database (small catalogue: <= 200 products).
+model Image {
+  id        Int      @id @default(autoincrement())
+  data      Bytes
+  mimeType  String
+  createdAt DateTime @default(now())
+
+  siteContent SiteContent[]
+}
+
+// Editorial site content, edited from the back-office. Single row (id = 1).
+model SiteContent {
+  id        Int      @id @default(1)
+  titre     String   @default("Qui sommes-nous")
+  intro     String   @default("") // paragraphs separated by a blank line
+  imageId   Int?
+  image     Image?   @relation(fields: [imageId], references: [id], onDelete: SetNull)
+  adresse   String   @default("")
+  telephone String   @default("")
+  email     String   @default("")
+  horaires  String   @default("") // free-form multiline text
+  chiffres  Json     @default("[]") // [{ valeur, libelle }]
+  updatedAt DateTime @updatedAt
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  categoryId  Int
+  category    Category @relation(fields: [categoryId], references: [id])
+  titre       String
+  description String   @default("")
+  images      String[]
+  sku         String?  @unique
+  prixBase    Int // en centimes
+  actif       Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  pricing    ClientProductPricing[]
+  orderItems OrderItem[]
+}
+
+// Only exceptions are stored (negotiated price and/or hidden product).
+// No row = the client gets the base price (or their global discount).
+model ClientProductPricing {
+  id        Int     @id @default(autoincrement())
+  clientId  Int
+  productId Int
+  prix      Int? // cents; null = base price / global discount
+  visible   Boolean @default(true)
+
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, productId])
+}
+
+model Order {
+  id        Int         @id @default(autoincrement())
+  clientId  Int
+  client    Client      @relation(fields: [clientId], references: [id])
+  statut    String      @default("nouvelle") // nouvelle | traitee | annulee
+  total     Int // cents, computed server-side
+  note      String?
+  createdAt DateTime    @default(now())
+  items     OrderItem[]
+}
+
+model OrderItem {
+  id                   Int     @id @default(autoincrement())
+  orderId              Int
+  order                Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId            Int
+  product              Product @relation(fields: [productId], references: [id])
+  titreSnapshot        String
+  prixUnitaireSnapshot Int // cents, frozen at order time
+  quantite             Int
+  totalLigne           Int
+}

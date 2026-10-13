@@ -1,0 +1,34 @@
+# Local stack with demo data: docker compose -f docker-compose.local.yml up --build
+# Emails are printed to the app logs instead of being sent.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: catalogue
+      POSTGRES_PASSWORD: catalogue
+      POSTGRES_DB: catalogue
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U catalogue -d catalogue"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://catalogue:catalogue@db:5432/catalogue?schema=public
+      SESSION_SECRET: local-development-secret-not-for-production-0123456789
+      OWNER_EMAIL: owner@example.com
+    ports:
+      - "3000:3000"
+    command: sh -c "npx prisma migrate deploy && npx tsx prisma/seed.ts && npx next start"
+
+volumes:
+  db_data:
